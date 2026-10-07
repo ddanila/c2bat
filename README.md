@@ -23,7 +23,7 @@ the source program and emit a canned answer.
 ## Build
 
 Requirements: CMake 3.20+, a C++23 compiler, Bison 3.8+, Flex 2.6+, and Python 3
-for tests. No libraries are needed by the compiler at runtime.
+plus a native C compiler for tests. No libraries are needed by the compiler at runtime.
 
 On macOS, install `cmake bison flex` with Homebrew. Apple's bundled Bison is
 older than the required version, so select the Homebrew tools explicitly:
@@ -75,6 +75,11 @@ range error prints `C2BAT ERROR: RANGE` and sets `CBERR=RANGE`. The return value
 is not conveyed through DOS `ERRORLEVEL`.
 
 Generated files use CRLF, 8.3 names, short labels, and lines below 128 bytes.
+`RUN.BAT` includes `REM` comments identifying each stack instruction and its
+C statement's source line, and emits instruction labels only at jump targets.
+`PROGRAM.IR` includes the same source line references. Raw source text is not
+embedded in batch comments, so C operators and comments cannot accidentally
+become DOS redirection or variable expansion.
 The executable runtime uses only `ECHO`, `SET`, `IF`, `GOTO`, and `CALL`.
 There are no runtime EXE/COM helpers, Windows command extensions, `SET /A`,
 delayed expansion, or `CALL :label`.
@@ -143,19 +148,33 @@ python3 tests/check_dos.py \
   --compiler build/c2bat --work build/dos622
 ```
 
-`--work` must be a new directory. Use another directory for subsequent runs,
-or remove the old test output first. The serial transcript is saved as
+If specified, `--work` must be a new directory. Omit it to allocate a fresh
+temporary directory automatically; the harness prints its location and retains
+its artifacts for inspection. The serial transcript is saved as
 `build/dos622/serial.log`. A source-built DOS image can also be supplied, for
 example `../msdos/out/floppy.img`.
 
 The test harness adds a tiny `QEXIT.COM` solely to stop QEMU after testing;
 it is not part of generated programs or their runtime. CI runs the host
-checks without proprietary DOS media. Host checks also compare successful
-cases with a native C compiler when `cc` is available.
+checks without proprietary DOS media. Both the host suite and DOS harness
+first compare results with a native C compiler (`cc`, `clang`, or `gcc`, required
+for testing) and the C++ reference VM. The shared corpus includes fixed edge
+cases and generated expressions/loops using a reproducible random seed.
 
-Validated locally on MS-DOS 6.22: eleven programs covering arithmetic,
-looping, scope, all supported comparisons, integer literal forms, dangling
-`else`, and both arithmetic range-error directions.
+To include DOS in regular CTest runs, configure a local image once:
+
+```sh
+cmake -S . -B build -DC2BAT_DOS_IMAGE=/absolute/path/to/dos.img
+ctest --test-dir build --output-on-failure
+```
+
+The DOS test gets a fresh output directory on every run. Set
+`-DC2BAT_DOS_IMAGE=` to disable it; no image path is committed to Git.
+The shared suite contains 59 programs: 57 successful results checked against
+native C plus two intentional VM range errors. Cases cover nested loops,
+early returns, skipped branches, scope, precedence, all supported comparisons,
+integer literal forms, dangling `else`, and deterministic generated programs.
+Host-only checks also exercise stack/local limits and invalid inputs.
 
 ## Next steps
 

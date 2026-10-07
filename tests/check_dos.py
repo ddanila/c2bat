@@ -4,15 +4,24 @@ import argparse
 import pathlib
 import shutil
 import subprocess
+import tempfile
 from cases import CASES
+from differential import check_programs
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--image', type=pathlib.Path, required=True)
 parser.add_argument('--compiler', type=pathlib.Path, default=pathlib.Path('build/c2bat'))
-parser.add_argument('--work', type=pathlib.Path, required=True, help='new directory for image and serial log')
+parser.add_argument('--work', type=pathlib.Path, help='new output directory (default: fresh temporary directory)')
+parser.add_argument('--timeout', type=int, default=180, help='QEMU timeout in seconds')
 args = parser.parse_args()
 compiler = args.compiler.resolve()
-args.work.mkdir(parents=True, exist_ok=False)
+if args.work is None:
+    args.work = pathlib.Path(tempfile.mkdtemp(prefix='c2bat-dos-'))
+else:
+    args.work.mkdir(parents=True, exist_ok=False)
+print(f'DOS artifacts: {args.work}', flush=True)
+native_count = check_programs(compiler, CASES, args.work / 'differential')
+print(f'PASS: {len(CASES)} reference VM cases and {native_count} native C comparisons', flush=True)
 image = args.work / 'boot.img'
 shutil.copyfile(args.image, image)
 
@@ -53,14 +62,15 @@ command = ['qemu-system-i386', '-display', 'none', '-monitor', 'none',
            '-boot', 'a', '-serial', 'stdio', '-no-reboot',
            '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04']
 try:
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=args.timeout)
 except subprocess.TimeoutExpired as error:
     (args.work / 'serial.log').write_bytes(error.stdout or b'')
     raise SystemExit(f'DOS timed out; inspect {args.work / "serial.log"}')
 log = result.stdout.decode('ascii', errors='replace')
 (args.work / 'serial.log').write_text(log)
 print(log)
-missing = [name for name, _, _ in CASES if f'PASS_{name}' not in log]
+lines = log.splitlines()
+missing = [name for name, _, _ in CASES if lines.count(f'PASS_{name}') != 1]
 if result.returncode != 33 or missing or 'SUITE_DONE' not in log:
     raise SystemExit(f'DOS check failed: exit={result.returncode}, missing={missing}')
 print(f'PASS: {len(CASES)} programs under booted COMMAND.COM; log: {args.work / "serial.log"}')

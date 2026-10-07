@@ -2,6 +2,7 @@
 #include <array>
 #include <fstream>
 #include <sstream>
+#include <set>
 #include <stdexcept>
 
 namespace c2bat {
@@ -17,9 +18,10 @@ void write(const std::filesystem::path& path, const std::string& text) {
 std::string disassemble(const Program& program) {
     std::ostringstream out;
     for (std::size_t i = 0; i < program.size(); ++i) {
-        const auto [op, arg] = program[i];
+        const auto [op, arg, line] = program[i];
         out << i << ": " << name(op);
         if (op == Op::push || op == Op::load || op == Op::store || op == Op::jump || op == Op::jump_zero) out << ' ' << arg;
+        if (line) out << " ; C line " << line;
         out << '\n';
     }
     return out.str();
@@ -33,7 +35,7 @@ int interpret(const Program& program) {
     };
     std::size_t pc = 0;
     for (int steps = 0; steps < 100000; ++steps) {
-        auto [op, arg] = program.at(pc++);
+        auto [op, arg, line] = program.at(pc++);
         switch (op) {
         case Op::push: stack.push_back(arg); break;
         case Op::load: stack.push_back(locals.at(static_cast<std::size_t>(arg))); break;
@@ -49,7 +51,7 @@ int interpret(const Program& program) {
             if (op == Op::sub) result = left - right;
             if (op == Op::less) result = left < right;
             if (op == Op::equal) result = left == right;
-            if (result < 0 || result > 255) throw std::runtime_error("VM range error (0..255)");
+            if (result < 0 || result > 255) throw std::runtime_error("VM range error (0..255) at C line " + std::to_string(line));
             stack.push_back(result);
         }
         }
@@ -130,9 +132,20 @@ CALL PUSH.BAT %A%
 )");
     main << "@ECHO OFF\nSET CBERR=\nSET CBRESULT=\n";
     for (int i = 0; i < 16; ++i) main << "SET S" << i << "=\nSET L" << i << "=\n";
+    std::set<int> targets;
+    for (const auto& instruction : program)
+        if (instruction.op == Op::jump || instruction.op == Op::jump_zero)
+            targets.insert(instruction.argument);
     for (std::size_t i = 0; i < program.size(); ++i) {
-        auto [op, arg] = program[i];
-        main << ":I" << i << '\n';
+        auto [op, arg, line] = program[i];
+        if (targets.contains(static_cast<int>(i))) main << ":I" << i << '\n';
+        // Only compiler-owned text and numbers go into REM: raw C source can
+        // contain DOS expansion/redirection characters, even inside comments.
+        main << "REM " << i << " - " << name(op);
+        if (op == Op::push || op == Op::load || op == Op::store || op == Op::jump || op == Op::jump_zero)
+            main << ' ' << arg;
+        if (line) main << " - C line " << line;
+        main << '\n';
         switch (op) {
         case Op::push: main << "CALL PUSH.BAT " << arg << '\n'; break;
         case Op::load: main << "CALL PUSH.BAT %L" << arg << "%\n"; break;

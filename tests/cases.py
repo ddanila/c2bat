@@ -11,3 +11,53 @@ CASES = [
     ('overflow', 'int main(void) { return 255+1; }', None),
     ('underflow', 'int main(void) { return 0-1; }', None),
 ]
+
+# Each case stays inside the prototype's range unless it explicitly expects
+# a runtime error. In particular, unreachable bad arithmetic must stay skipped.
+CASES += [
+    ('skip', 'int main(void) { if(0) return 255+1; while(0) { return 0-1; } return 7; }', 7),
+    ('early', 'int main(void) { int i=0; while(i<5) { if(i==2) return i; i=i+1; } return 99; }', 2),
+    ('nested', 'int main(void) { int s=0; int i=0; while(i<3) { int j=0; while(j<2) { s=s+1; j=j+1; } i=i+1; } return s; }', 6),
+    ('falloff', 'int main(void) { int x=1; x=x+1; }', 0),
+    ('unary', 'int main(void) { return +3 + -0 + !!2; }', 4),
+    ('precedence', 'int main(void) { return 1 + 2 < 4 == 1; }', 1),
+    ('comment', 'int main(void) { /* %PATH% > BAD.TXT | ECHO surprise */\nreturn 7; }', 7),
+    ('longid', 'int main(void) { int ' + 'x' * 160 + '=3; return ' + 'x' * 160 + '; }', 3),
+]
+
+
+def generated_cases(seed=622, count=32):
+    """Small deterministic expression trees with independently computed values."""
+    import random
+    rng = random.Random(seed)
+
+    def expression(depth):
+        if not depth or rng.randrange(4) == 0:
+            value = rng.randrange(6)
+            return str(value), value
+        left, a = expression(depth - 1)
+        right, b = expression(depth - 1)
+        op = rng.choice(['+', '-', '<', '>', '<=', '>=', '==', '!='])
+        if op == '-' and a < b:
+            left, right, a, b = right, left, b, a
+        value = {'+': lambda: a + b, '-': lambda: a - b,
+                 '<': lambda: int(a < b), '>': lambda: int(a > b),
+                 '<=': lambda: int(a <= b), '>=': lambda: int(a >= b),
+                 '==': lambda: int(a == b), '!=': lambda: int(a != b)}[op]()
+        return f'({left} {op} {right})', value
+
+    result = []
+    for i in range(count):
+        expr, value = expression(3)
+        result.append((f'expr{i}', f'int main(void) {{ return {expr}; }}', value))
+    for i in range(8):
+        bound = rng.randrange(1, 5)
+        increment = rng.randrange(1, 4)
+        source = (f'int main(void) {{ int n=0; int i=0; while(i<{bound}) {{ '
+                  f'if(i!=1) n=n+{increment}; else n=n+1; i=i+1; }} return n; }}')
+        expected = sum(1 if j == 1 else increment for j in range(bound))
+        result.append((f'loop{i}', source, expected))
+    return result
+
+
+CASES += generated_cases()

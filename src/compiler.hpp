@@ -22,10 +22,13 @@ struct Assign { std::string name; ExprPtr value; };
 struct Return { ExprPtr value; };
 struct If { ExprPtr condition; StmtPtr yes, no; };
 struct While { ExprPtr condition; StmtPtr body; };
-struct Stmt { std::variant<Block, Declare, Assign, Return, If, While> node; };
+struct Stmt {
+    std::variant<Block, Declare, Assign, Return, If, While> node;
+    int source_line = 0;
+};
 
 enum class Op { push, load, store, add, sub, less, equal, logical_not, jump, jump_zero, ret };
-struct Instruction { Op op; int argument = 0; };
+struct Instruction { Op op; int argument = 0; int source_line = 0; };
 using Program = std::vector<Instruction>;
 StmtPtr parse(std::string_view source);
 Program lower(const Stmt& tree);

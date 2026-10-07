@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 from cases import CASES
+from differential import check_programs
 
 compiler = str(pathlib.Path(sys.argv[1]).resolve())
 with tempfile.TemporaryDirectory() as temporary:
@@ -14,12 +15,7 @@ with tempfile.TemporaryDirectory() as temporary:
         source.write_text(text)
         return subprocess.run([compiler, *args, str(source)], capture_output=True, text=True)
 
-    for name, text, expected in CASES:
-        result = invoke(text, '--run')
-        if expected is None:
-            assert result.returncode == 1 and 'range error' in result.stderr, (name, result)
-        else:
-            assert result.returncode == 0 and result.stdout == f'RESULT={expected}\n', (name, result)
+    native_count = check_programs(compiler, CASES, root / "differential")
 
     for text in [
         'int main(void) { return 1++2; }',
@@ -41,17 +37,31 @@ with tempfile.TemporaryDirectory() as temporary:
         result = invoke(text, '--ir')
         assert result.returncode == 1, (text, result)
 
-    # Compare against a native C compiler for additional precedence/scope cases.
-    import shutil
-    cc = shutil.which('cc')
-    if cc:
-        for name, text, expected in CASES:
-            if expected is None:
-                continue
-            source.write_text(text)
-            executable = root / 'native'
-            subprocess.run([cc, '-std=c99', str(source), '-o', str(executable)], check=True)
-            assert subprocess.run([str(executable)]).returncode == expected, name
+    # Boundaries: distinguish exactly supported stack/local counts from overflow.
+    for count in (16, 17):
+        expr = '0'
+        for _ in range(count - 1):
+            expr = '0+(' + expr + ')'
+        result = invoke('int main(void) { return ' + expr + '; }', '--run')
+        assert result.returncode == (0 if count == 16 else 1), result
+        declarations = ''.join(f'int x{i}={i};' for i in range(count))
+        result = invoke('int main(void) {' + declarations + 'return x0;}', '--run')
+        assert result.returncode == (0 if count == 16 else 1), result
+
+    # Multiline source locations survive lowering; source metacharacters never
+    # become commands through the diagnostic comments.
+    source.write_text('int main(void) {\n'
+                      ' /* %PATH% > BAD.TXT | ECHO surprise */\n'
+                      ' int x=1;\n'
+                      ' x=x+2;\n'
+                      ' return x;\n}\n')
+    annotated = root / 'annotated'
+    subprocess.run([compiler, str(source), '-o', str(annotated)], check=True)
+    batch = (annotated / 'RUN.BAT').read_text()
+    assert 'STORE 0 - C line 3' in batch and 'ADD - C line 4' in batch
+    assert 'RETURN - C line 5' in batch and 'BAD.TXT' not in batch
+    result = invoke('int main(void) {\n return 255+1;\n}', '--run')
+    assert result.returncode == 1 and 'C line 2' in result.stderr, result
 
     # Emission is not evaluation: even a nonterminating program can be compiled.
     source.write_text('int main(void) { while(1) { } }')
@@ -65,7 +75,11 @@ with tempfile.TemporaryDirectory() as temporary:
         for line in data.splitlines():
             if line.startswith(b':'):
                 assert len(line[1:]) <= 8
+    text = (out / 'RUN.BAT').read_text()
+    assert 'REM 0 - PUSH 1 - C line 1' in text
+    assert ':I0\n' in text  # while condition is a jump target
+    assert ':I1\n' not in text  # ordinary instructions have no labels
     before = (out / 'RUN.BAT').read_bytes()
     result = subprocess.run([compiler, str(source), '-o', str(out)], capture_output=True)
     assert result.returncode == 1 and (out / 'RUN.BAT').read_bytes() == before
-print('PASS: reference VM, native C comparisons, diagnostics, and DOS file format')
+print(f'PASS: {len(CASES)} VM cases, {native_count} native C comparisons, diagnostics, and DOS file format')

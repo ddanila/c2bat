@@ -1,5 +1,4 @@
 #include "compiler.hpp"
-#include <cctype>
 #include <map>
 #include <stdexcept>
 #include <utility>
@@ -11,7 +10,8 @@ class Lowerer {
     std::vector<std::map<std::string, int>> scopes;
     int slots = 0;
     int depth = 0;
-    void emit(Op op, int arg = 0) { code.push_back({op, arg}); }
+    int source_line = 0;
+    void emit(Op op, int arg = 0) { code.push_back({op, arg, source_line}); }
     int address() const { return static_cast<int>(code.size()); }
     int lookup(const std::string& name) const {
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
@@ -41,7 +41,11 @@ class Lowerer {
         --depth;
         if (n.op == "!=" || n.op == "<=" || n.op == ">=") emit(Op::logical_not);
     }
-    void statement(const Stmt& s) { std::visit([&](const auto& node) { statement_node(node); }, s.node); }
+    void statement(const Stmt& s) {
+        const auto previous_line = std::exchange(source_line, s.source_line);
+        std::visit([&](const auto& node) { statement_node(node); }, s.node);
+        source_line = previous_line;
+    }
     void statement_node(const Block& n) {
         scopes.emplace_back();
         for (const auto& s : n.statements) statement(*s);

@@ -74,10 +74,14 @@ expression : equality_expression { $$ = std::move($1); } ;
 declaration
     : INT IDENTIFIER ASSIGN expression SEMI {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::Declare{std::move($2), std::move($4)});
+        $$->source_line = @$.begin.line;
     }
     ;
 compound_statement
-    : LBRACE block_item_list RBRACE { $$ = std::make_unique<c2bat::Stmt>(std::move($2)); }
+    : LBRACE block_item_list RBRACE {
+        $$ = std::make_unique<c2bat::Stmt>(std::move($2));
+        $$->source_line = @$.begin.line;
+    }
     ;
 block_item_list
     : %empty { $$ = c2bat::Block{}; }
@@ -88,16 +92,23 @@ statement
     : compound_statement { $$ = std::move($1); }
     | IDENTIFIER ASSIGN expression SEMI {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::Assign{std::move($1), std::move($3)});
+        $$->source_line = @$.begin.line;
     }
-    | RETURN expression SEMI { $$ = std::make_unique<c2bat::Stmt>(c2bat::Return{std::move($2)}); }
+    | RETURN expression SEMI {
+        $$ = std::make_unique<c2bat::Stmt>(c2bat::Return{std::move($2)});
+        $$->source_line = @$.begin.line;
+    }
     | IF LPAREN expression RPAREN statement %prec IF_WITHOUT_ELSE {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::If{std::move($3), std::move($5), nullptr});
+        $$->source_line = @$.begin.line;
     }
     | IF LPAREN expression RPAREN statement ELSE statement {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::If{std::move($3), std::move($5), std::move($7)});
+        $$->source_line = @$.begin.line;
     }
     | WHILE LPAREN expression RPAREN statement {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::While{std::move($3), std::move($5)});
+        $$->source_line = @$.begin.line;
     }
     ;
 %%
