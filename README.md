@@ -1,0 +1,165 @@
+# c2bat
+
+Compile a small subset of C into a stack machine made entirely of MS-DOS
+`COMMAND.COM` batch files. A fun compiler experiment, implemented in C++23
+with Flex and Bison.
+
+```c
+int main(void) {
+    int sum = 0;
+    int i = 1;
+    while (i <= 5) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return sum;
+}
+```
+
+The generated batch program prints `RESULT=15` on actual MS-DOS 6.22.
+Arithmetic executes inside the batch runtime; the compiler does not evaluate
+the source program and emit a canned answer.
+
+## Build
+
+Requirements: CMake 3.20+, a C++23 compiler, Bison 3.8+, Flex 2.6+, and Python 3
+for tests. No libraries are needed by the compiler at runtime.
+
+On macOS, install `cmake bison flex` with Homebrew. Apple's bundled Bison is
+older than the required version, so select the Homebrew tools explicitly:
+
+```sh
+cmake -S . -B build \
+  -DBISON_EXECUTABLE="$(brew --prefix bison)/bin/bison" \
+  -DFLEX_EXECUTABLE="$(brew --prefix flex)/bin/flex" \
+  -DFLEX_INCLUDE_DIR="$(brew --prefix flex)/include"
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+On Linux with those dependencies installed:
+
+```sh
+cmake -S . -B build
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+## Compile and run
+
+```sh
+build/c2bat --ir examples/sum.c       # inspect stack instructions
+build/c2bat --run examples/sum.c      # execute the C++ reference VM
+build/c2bat examples/sum.c -o out     # emit into a NEW directory
+```
+
+Copy all `.BAT` files from `out` to one DOS directory and change into it.
+Start a disposable command interpreter with enough environment space:
+
+```dos
+COMMAND /E:4096
+RUN.BAT
+EXIT
+```
+
+The runtime uses environment variables for 16 stack slots, local variables,
+and scratch registers. A child interpreter keeps those names separate from
+your interactive shell. Success prints `RESULT=n` and sets `CBRESULT`; a
+range error prints `C2BAT ERROR: RANGE` and sets `CBERR=RANGE`. The return value
+is not conveyed through DOS `ERRORLEVEL`.
+
+Generated files use CRLF, 8.3 names, short labels, and lines below 128 bytes.
+The executable runtime uses only `ECHO`, `SET`, `IF`, `GOTO`, and `CALL`.
+There are no runtime EXE/COM helpers, Windows command extensions, `SET /A`,
+delayed expansion, or `CALL :label`.
+
+## Current language and machine limits
+
+This is a working prototype, not a conforming C implementation:
+
+- One entry point: `int main(void)`; falling off the end returns zero.
+- Initialized `int` locals, assignment statements, nested scopes, `if`/`else`,
+  `while`, and `return`.
+- Unsuffixed decimal, octal, and hexadecimal constants; parentheses; binary
+  `+`, `-`, comparisons, and unary `+`, `-`, `!`.
+- All evaluated integers must stay in **0..255**. Arithmetic outside that
+  range fails, including negative results. This is a temporary VM bound,
+  not C's `int` representation or unsigned wrapping arithmetic.
+- At most 16 local declarations and 16 simultaneously stacked values.
+- No preprocessing, line splicing, typedefs, pointers, arrays, strings,
+  function calls, multiplication/division, or increment operators yet.
+- The host reference VM stops after 100,000 instructions. DOS execution has
+  no instruction budget; the test harness applies a timeout.
+
+The frontend uses published Jeff Lee/Jutta Degener C99 lexical rules and a
+restricted adaptation of their grammar. See [provenance and upstream
+references](third_party/quut/README.md). Unsupported tokens are rejected;
+recognizing C lexical forms does not imply support for all C semantics.
+
+## Architecture
+
+```text
+C source → Flex scanner → Bison C++ parser → AST
+                                              ↓
+                           scope resolution + stack IR
+                                      ↙              ↘
+                          C++ reference VM      batch emitter
+                                                     ↓
+                                             COMMAND.COM
+```
+
+- `src/scanner.l`, `src/parser.y`: lexical rules and grammar; actions construct
+  typed AST nodes with `std::unique_ptr` ownership.
+- `src/compiler.hpp`: AST and stack instruction types.
+- `src/frontend.cpp`: name resolution and lowering, independent of the parser.
+- `src/machine.cpp`: reference interpreter and batch runtime generation.
+
+`RUN.BAT` is the emitted instruction stream. `PUSH.BAT`/`POP.BAT` shift the
+fixed stack; `OP.BAT` implements operations. `STEP.BAT` is a generated
+successor/predecessor table for 0..255. Addition and subtraction loop through
+that table. This is intentionally slow and inspectable. `PROGRAM.IR` is a
+human-readable listing, not a file interpreted by DOS.
+
+## Check under real DOS
+
+Supply a bootable DOS floppy image containing `COMMAND.COM`. The harness
+copies it, replaces startup files in the copy, installs generated tests,
+boots QEMU, and checks serial results. The input image remains unchanged.
+DOS images and binaries are not distributed in this repository.
+
+Requirements: `qemu-system-i386`, `mcopy` from mtools, Python 3, and a built
+compiler. From this repository, using the neighboring workspace's reference
+media:
+
+```sh
+python3 tests/check_dos.py \
+  --image ../msdos-reference-media/msdos-6.22/disk1.img \
+  --compiler build/c2bat --work build/dos622
+```
+
+`--work` must be a new directory. Use another directory for subsequent runs,
+or remove the old test output first. The serial transcript is saved as
+`build/dos622/serial.log`. A source-built DOS image can also be supplied, for
+example `../msdos/out/floppy.img`.
+
+The test harness adds a tiny `QEXIT.COM` solely to stop QEMU after testing;
+it is not part of generated programs or their runtime. CI runs the host
+checks without proprietary DOS media. Host checks also compare successful
+cases with a native C compiler when `cc` is available.
+
+Validated locally on MS-DOS 6.22: eleven programs covering arithmetic,
+looping, scope, all supported comparisons, integer literal forms, dangling
+`else`, and both arithmetic range-error directions.
+
+## Next steps
+
+1. Signed 16-bit integer representation and arithmetic with explicit C rules.
+2. More expressions, short-circuit operators, and structured control flow.
+3. Function calls and stack frames.
+4. Simulated memory, arrays, and pointers.
+5. Broader C grammar support and a preprocessing strategy.
+
+## License
+
+[MIT](LICENSE). Published grammar provenance and permission are documented
+separately in [third_party/quut](third_party/quut/README.md).
