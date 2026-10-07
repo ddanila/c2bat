@@ -37,7 +37,13 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-On Linux with those dependencies installed:
+On Debian/Ubuntu, install the development headers as well as the generators:
+
+```sh
+sudo apt-get install build-essential cmake bison flex libfl-dev python3
+```
+
+Then build:
 
 ```sh
 cmake -S . -B build
