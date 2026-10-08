@@ -39,7 +39,11 @@ def check_programs(compiler, cases, directory):
     path = directory / 'native.c'
     path.write_text('\n'.join(unit))
     executable = directory / 'native'
-    subprocess.run([cc, '-std=c99', str(path), '-o', str(executable)], check=True, timeout=30)
+    build = subprocess.run([cc, '-std=c99', str(path), '-o', str(executable)],
+                           capture_output=True, text=True, timeout=30)
+    (directory / 'native-build.log').write_text(build.stdout + build.stderr)
+    if build.returncode:
+        raise RuntimeError('Native C build failed:\n' + build.stderr)
     result = subprocess.run([str(executable)], check=True, capture_output=True, text=True, timeout=10)
     expected = ''.join(f'{name}={value}\n' for name, _, value in successful)
     assert result.stdout == expected, ('native C disagrees', result.stdout, expected)

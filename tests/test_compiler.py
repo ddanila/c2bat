@@ -25,7 +25,11 @@ with tempfile.TemporaryDirectory() as temporary:
         'int main(void) { int x=1; int x=2; return x; }',
         'int main(void) { int x=x; return x; }',
         'int main(void) { int x=1; { int x=x; } return x; }',
-        'int main(void) { return 256; }',
+        'int main(void) { return 32768; }',
+        'int main(void) { return 0x8000; }',
+        'int main(void) { return 1 & 2; }',
+        'int main(void) { return 1 | 2; }',
+        'int main(void) { return 0 && missing; }',
         'int main(void) { return 09; }',
         'int main(void) { return 1.5; }',
         'int main(void) { return 1u; }',
@@ -60,7 +64,7 @@ with tempfile.TemporaryDirectory() as temporary:
     batch = (annotated / 'RUN.BAT').read_text()
     assert 'STORE 0 - C line 3' in batch and 'ADD - C line 4' in batch
     assert 'RETURN - C line 5' in batch and 'BAD.TXT' not in batch
-    result = invoke('int main(void) {\n return 255+1;\n}', '--run')
+    result = invoke('int main(void) {\n return 32767+1;\n}', '--run')
     assert result.returncode == 1 and 'C line 2' in result.stderr, result
 
     # Emission is not evaluation: even a nonterminating program can be compiled.

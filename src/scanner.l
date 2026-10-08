@@ -88,8 +88,8 @@ L?\"(\\.|[^\\"\n])*\" { unsupported(yytext); }
 "++" { unsupported(yytext); }
 "--" { unsupported(yytext); }
 "->" { unsupported(yytext); }
-"&&" { unsupported(yytext); }
-"||" { unsupported(yytext); }
+"&&" { return c2bat::Parser::make_AND(location); }
+"||" { return c2bat::Parser::make_OR(location); }
 "<=" { return c2bat::Parser::make_LE(location); }
 ">=" { return c2bat::Parser::make_GE(location); }
 "==" { return c2bat::Parser::make_EQ(location); }

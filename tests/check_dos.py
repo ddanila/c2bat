@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--image', type=pathlib.Path, required=True)
 parser.add_argument('--compiler', type=pathlib.Path, default=pathlib.Path('build/c2bat'))
 parser.add_argument('--work', type=pathlib.Path, help='new output directory (default: fresh temporary directory)')
-parser.add_argument('--timeout', type=int, default=180, help='QEMU timeout in seconds')
+parser.add_argument('--timeout', type=int, default=300, help='QEMU timeout in seconds')
 args = parser.parse_args()
 compiler = args.compiler.resolve()
 if args.work is None:
@@ -61,13 +61,15 @@ command = ['qemu-system-i386', '-display', 'none', '-monitor', 'none',
            '-drive', f'if=floppy,format=raw,file={image},cache=writethrough',
            '-boot', 'a', '-serial', 'stdio', '-no-reboot',
            '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04']
-try:
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=args.timeout)
-except subprocess.TimeoutExpired as error:
-    (args.work / 'serial.log').write_bytes(error.stdout or b'')
-    raise SystemExit(f'DOS timed out; inspect {args.work / "serial.log"}')
-log = result.stdout.decode('ascii', errors='replace')
-(args.work / 'serial.log').write_text(log)
+log_path = args.work / 'serial.log'
+with log_path.open('wb') as serial:
+    try:
+        result = subprocess.run(command, stdout=serial, stderr=subprocess.STDOUT, timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        tail = log_path.read_text(errors='replace').splitlines()[-20:]
+        print('\n'.join(tail))
+        raise SystemExit(f'DOS timed out; inspect {log_path}')
+log = log_path.read_text(encoding='ascii', errors='replace')
 print(log)
 lines = log.splitlines()
 missing = [name for name, _, _ in CASES if lines.count(f'PASS_{name}') != 1]

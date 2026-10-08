@@ -32,6 +32,7 @@ struct Instruction { Op op; int argument = 0; int source_line = 0; };
 using Program = std::vector<Instruction>;
 StmtPtr parse(std::string_view source);
 Program lower(const Stmt& tree);
+const char* opcode_name(Op op);
 std::string disassemble(const Program& program);
 int interpret(const Program& program);
 void emit_batch(const Program& program, const std::filesystem::path& directory);

@@ -31,6 +31,18 @@ class Lowerer {
         if (n.op == "-") { emit(Op::sub); --depth; }
     }
     void expression_node(const Binary& n) {
+        if (n.op == "&&" || n.op == "||") {
+            // Each path consumes the left value and leaves one normalized bool.
+            expression(*n.left);
+            if (n.op == "||") emit(Op::logical_not);
+            const auto branch = code.size(); emit(Op::jump_zero); --depth;
+            expression(*n.right); emit(Op::logical_not); emit(Op::logical_not);
+            const auto end = code.size(); emit(Op::jump);
+            code[branch].argument = address();
+            emit(Op::push, n.op == "||" ? 1 : 0);
+            code[end].argument = address();
+            return;
+        }
         const bool reverse = n.op == ">" || n.op == "<=";
         expression(reverse ? *n.right : *n.left);
         expression(reverse ? *n.left : *n.right);

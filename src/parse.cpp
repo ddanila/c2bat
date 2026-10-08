@@ -18,7 +18,7 @@ Parser::symbol_type Scanner::integer(const char* text) {
     try { number = std::stoul(value, &consumed, 0); }
     catch (const std::exception&) { throw Parser::syntax_error(location, "invalid or oversized integer constant"); }
     if (consumed != value.size()) unsupported(text);
-    if (number > 255) throw Parser::syntax_error(location, "literal outside prototype range 0..255");
+    if (number > 32767) throw Parser::syntax_error(location, "integer literal requires an unsupported type (maximum 32767)");
     return Parser::make_CONSTANT(static_cast<int>(number), location);
 }
 void Scanner::unsupported(const char* text) const {

@@ -92,10 +92,15 @@ This is a working prototype, not a conforming C implementation:
 - Initialized `int` locals, assignment statements, nested scopes, `if`/`else`,
   `while`, and `return`.
 - Unsuffixed decimal, octal, and hexadecimal constants; parentheses; binary
-  `+`, `-`, comparisons, and unary `+`, `-`, `!`.
-- All evaluated integers must stay in **0..255**. Arithmetic outside that
-  range fails, including negative results. This is a temporary VM bound,
-  not C's `int` representation or unsigned wrapping arithmetic.
+  `+`, `-`, comparisons, short-circuit `&&`/`||`, and unary `+`, `-`, `!`.
+- `int` values span **−32768..32767**. Addition, subtraction, and negation
+  report an error on signed overflow; they do not wrap.
+- Integer literals must fit a positive `int` (0..32767). Larger constants
+  require types that are not implemented yet. Write the minimum value as
+  `-32767 - 1`, not `-32768`; the latter contains the unsupported literal
+  `32768`. Unsigned constants, suffixes, and integer conversions remain unsupported.
+- Logical operators evaluate left to right, skip the right operand when
+  possible, and return exactly 0 or 1. Bitwise `&` and `|` are not implemented.
 - At most 16 local declarations and 16 simultaneously stacked values.
 - No preprocessing, line splicing, typedefs, pointers, arrays, strings,
   function calls, multiplication/division, or increment operators yet.
@@ -123,13 +128,25 @@ C source → Flex scanner → Bison C++ parser → AST
   typed AST nodes with `std::unique_ptr` ownership.
 - `src/compiler.hpp`: AST and stack instruction types.
 - `src/frontend.cpp`: name resolution and lowering, independent of the parser.
-- `src/machine.cpp`: reference interpreter and batch runtime generation.
+- `src/machine.cpp`: reference interpreter and instruction listing.
+- `src/batch.cpp`: batch emitter and generated runtime.
 
 `RUN.BAT` is the emitted instruction stream. `PUSH.BAT`/`POP.BAT` shift the
-fixed stack; `OP.BAT` implements operations. `STEP.BAT` is a generated
-successor/predecessor table for 0..255. Addition and subtraction loop through
-that table. This is intentionally slow and inspectable. `PROGRAM.IR` is a
-human-readable listing, not a file interpreted by DOS.
+fixed stack; each value is a sign (`P` or `M`) and five decimal digits. For
+example, −123 is stored as `M 0 0 1 2 3`. Zero always uses `P`.
+
+`OP.BAT` handles signs, comparisons, and arithmetic. `UNPACK.BAT` extracts
+registers; `MAG.BAT` uses generated `D0.BAT` through `D9.BAT` tables for
+five-digit addition/subtraction with carry/borrow. `SWAP.BAT` exchanges
+magnitudes, `ISZERO.BAT` tests for zero, `LIMIT.BAT` checks the signed range,
+and `FORMAT.BAT` produces
+ordinary decimal output. Arithmetic takes a fixed number of digit operations,
+rather than iterating once per unit of operand value.
+
+Short-circuit logic lowers to existing conditional jumps; it needs no special
+batch runtime instruction. `PROGRAM.IR` is a human-readable listing, not a
+file interpreted by DOS. See [examples/signed.c](examples/signed.c) for a
+program combining negative arithmetic and short-circuit conditions.
 
 ## Check under real DOS
 
@@ -150,7 +167,7 @@ python3 tests/check_dos.py \
 
 If specified, `--work` must be a new directory. Omit it to allocate a fresh
 temporary directory automatically; the harness prints its location and retains
-its artifacts for inspection. The serial transcript is saved as
+its artifacts for inspection. The serial transcript is written live to
 `build/dos622/serial.log`. A source-built DOS image can also be supplied, for
 example `../msdos/out/floppy.img`.
 
@@ -170,16 +187,19 @@ ctest --test-dir build --output-on-failure
 
 The DOS test gets a fresh output directory on every run. Set
 `-DC2BAT_DOS_IMAGE=` to disable it; no image path is committed to Git.
-The shared suite contains 59 programs: 57 successful results checked against
-native C plus two intentional VM range errors. Cases cover nested loops,
-early returns, skipped branches, scope, precedence, all supported comparisons,
-integer literal forms, dangling `else`, and deterministic generated programs.
+The shared suite includes native-C comparisons and intentional VM overflow
+errors. Cases cover signed boundaries, decimal carry/borrow chains, negative
+comparisons, short-circuit evaluation, nested loops, early returns, skipped
+branches, scope, precedence, integer literal forms, dangling `else`, and
+deterministically generated programs. Native C comparisons cover expressions
+whose intermediate results fit our 16-bit target; host C usually has wider
+integers, so target overflow errors are checked separately.
 Host-only checks also exercise stack/local limits and invalid inputs.
 
 ## Next steps
 
-1. Signed 16-bit integer representation and arithmetic with explicit C rules.
-2. More expressions, short-circuit operators, and structured control flow.
+1. Multiplication, division, and remainder with explicit overflow handling.
+2. Compound assignments, increment/decrement, and more structured control flow.
 3. Function calls and stack frames.
 4. Simulated memory, arrays, and pointers.
 5. Broader C grammar support and a preprocessing strategy.

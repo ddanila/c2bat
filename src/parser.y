@@ -28,12 +28,13 @@ static c2bat::ExprPtr binary(std::string op, c2bat::ExprPtr left, c2bat::ExprPtr
 %token <int> CONSTANT "integer constant"
 %token INT "int" VOID "void" IF "if" ELSE "else" WHILE "while" RETURN "return"
 %token LPAREN "(" RPAREN ")" LBRACE "{" RBRACE "}" SEMI ";" ASSIGN "="
+%token AND "&&" OR "||"
 %token PLUS "+" MINUS "-" NOT "!" LT "<" GT ">" LE "<=" GE ">=" EQ "==" NE "!="
 %precedence IF_WITHOUT_ELSE
 %precedence ELSE
 %nterm <c2bat::StmtPtr> compound_statement statement declaration
 %nterm <c2bat::Block> block_item_list
-%nterm <c2bat::ExprPtr> primary_expression unary_expression additive_expression relational_expression equality_expression expression
+%nterm <c2bat::ExprPtr> primary_expression unary_expression additive_expression relational_expression equality_expression logical_and_expression logical_or_expression expression
 %start translation_unit
 %%
 translation_unit
@@ -70,7 +71,15 @@ equality_expression
     | equality_expression EQ relational_expression { $$ = binary("==", std::move($1), std::move($3)); }
     | equality_expression NE relational_expression { $$ = binary("!=", std::move($1), std::move($3)); }
     ;
-expression : equality_expression { $$ = std::move($1); } ;
+logical_and_expression
+    : equality_expression { $$ = std::move($1); }
+    | logical_and_expression AND equality_expression { $$ = binary("&&", std::move($1), std::move($3)); }
+    ;
+logical_or_expression
+    : logical_and_expression { $$ = std::move($1); }
+    | logical_or_expression OR logical_and_expression { $$ = binary("||", std::move($1), std::move($3)); }
+    ;
+expression : logical_or_expression { $$ = std::move($1); } ;
 declaration
     : INT IDENTIFIER ASSIGN expression SEMI {
         $$ = std::make_unique<c2bat::Stmt>(c2bat::Declare{std::move($2), std::move($4)});

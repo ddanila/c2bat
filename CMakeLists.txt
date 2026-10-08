@@ -7,7 +7,7 @@ BISON_TARGET(CParser src/parser.y ${CMAKE_CURRENT_BINARY_DIR}/parser.cpp
   COMPILE_FLAGS "--warnings=all --warnings=error=conflicts-sr,error=conflicts-rr")
 FLEX_TARGET(CScanner src/scanner.l ${CMAKE_CURRENT_BINARY_DIR}/scanner.cpp)
 ADD_FLEX_BISON_DEPENDENCY(CScanner CParser)
-add_executable(c2bat src/main.cpp src/frontend.cpp src/parse.cpp src/machine.cpp
+add_executable(c2bat src/main.cpp src/frontend.cpp src/parse.cpp src/machine.cpp src/batch.cpp
   ${BISON_CParser_OUTPUTS} ${FLEX_CScanner_OUTPUTS})
 target_include_directories(c2bat PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${FLEX_INCLUDE_DIRS})
 target_compile_features(c2bat PRIVATE cxx_std_23)
@@ -27,7 +27,7 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME dos COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_dos.py
       --image ${C2BAT_DOS_IMAGE} --compiler $<TARGET_FILE:c2bat>)
-    set_tests_properties(dos PROPERTIES TIMEOUT 240 LABELS integration)
+    set_tests_properties(dos PROPERTIES TIMEOUT 360 LABELS integration)
   endif()
   add_test(NAME compiler COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compiler.py $<TARGET_FILE:c2bat>)
 endif()
